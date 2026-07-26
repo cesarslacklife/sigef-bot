@@ -1,0 +1,97 @@
+# ============================================================================
+# STACK SWARM - SIGEF Bot  (deploy no Portainer: Stacks -> Add stack)
+# ----------------------------------------------------------------------------
+# Tres servicos isolados:
+#   postgis    -> sigef_postgis   (PostGIS 16, base de parcelas certificadas)
+#   redis      -> sigef_redis     (estado de conversa do agente)
+#   geoservice -> sigef_geoservice (API FastAPI + entrada do sync)
+#
+# ANTES do deploy:
+#   1) Construa a imagem na VPS:
+#        docker build -t sigef-geoservice:latest /opt/sigef-bot/geoservice
+#   2) Crie o secret do endpoint de sync:
+#        openssl rand -hex 32 | docker secret create sync_token -
+#   3) docker network ls -> confirme o nome da rede compartilhada do Traefik
+#   4) Preencha os campos <<< PREENCHER
+#
+# NOTA DE SEGURANCA: o banco NAO expoe porta para a internet. O sync envia o
+# shapefile por HTTPS para POST /sync/upload, autenticado por Docker secret.
+# ============================================================================
+version: "3.8"
+
+services:
+  postgis:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: sigef
+      POSTGRES_USER: sigef
+      POSTGRES_PASSWORD: "TROQUE_SENHA_POSTGIS"      # <<< PREENCHER
+    volumes:
+      - sigef_pgdata:/var/lib/postgresql/data
+    networks:
+      - sigef_net
+    # Sem "ports": o banco so e alcancavel de dentro da rede overlay.
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    networks:
+      - sigef_net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  geoservice:
+    image: sigef-geoservice:latest
+    environment:
+      PG_DSN: "postgresql://sigef:TROQUE_SENHA_POSTGIS@postgis:5432/sigef"  # <<< mesma senha do postgis
+      REDIS_URL: "redis://redis:6379/0"
+      BASE_URL: "http://sigef_geoservice:8000"
+      SIGEF_OFICIAL: "1"
+      WEBHOOK_NOTIFY: "http://NOME_DO_N8N:5678/webhook/sigef-admin"  # <<< host do n8n
+      SYNC_UF: "RJ"
+      SYNC_MIN_FEATURES: "1000"
+      UTM_FUSO_PADRAO: "23"
+      TTL_ESTADO: "1800"
+      FILES_DIR: "/data/files"
+      PW_DIR: "/data/pw"
+    secrets:
+      - sync_token
+    volumes:
+      - sigef_data:/data
+    networks:
+      - sigef_net        # privado: postgis e redis
+      - REDE_EXTERNA     # compartilhada: n8n, Evolution e Traefik  <<< nome real
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=REDE_EXTERNA"                       # <<< nome real
+        - "traefik.http.routers.sigefapi.rule=Host(`sigef.SEU_DOMINIO.com.br`)"  # <<< PREENCHER
+        - "traefik.http.routers.sigefapi.entrypoints=websecure"
+        - "traefik.http.routers.sigefapi.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.sigefapi.service=sigefapi"
+        - "traefik.http.services.sigefapi.loadbalancer.server.port=8000"
+        - "traefik.http.services.sigefapi.loadbalancer.passHostHeader=1"
+
+volumes:
+  sigef_pgdata:
+  sigef_data:
+
+networks:
+  sigef_net:
+    driver: overlay
+    attachable: true
+  REDE_EXTERNA:          # <<< troque pelo nome real (docker network ls)
+    external: true
+
+secrets:
+  sync_token:
+    external: true       # criado com: openssl rand -hex 32 | docker secret create sync_token -
