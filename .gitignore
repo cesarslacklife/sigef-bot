@@ -1,0 +1,43 @@
+﻿# Segredos - NUNCA versionar
+.env
+.env.*
+!.env.exemplo
+*.key
+*.pem
+cookies*.json
+*token*
+secrets/
+
+# Sessoes e perfis de navegador
+perfil_sigef/
+chrome-sigef/
+*.har
+
+# Dados e artefatos
+*.zip
+*.shp
+*.dbf
+*.shx
+*.prj
+*.ods
+*.pdf
+teste_saida/
+saida/
+downloads/
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+env/
+
+# Sistema
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
