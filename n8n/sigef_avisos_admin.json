@@ -1,0 +1,41 @@
+{
+  "name": "SIGEF Bot - Avisos Admin",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "SUBSTITUA_PATH_ADMIN",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "wh-admin",
+      "name": "Webhook Admin",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-300, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://SUBSTITUA_EVOLUTION:8080/message/sendText/SUBSTITUA_INSTANCIA",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [ { "name": "apikey", "value": "SUBSTITUA_APIKEY" } ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: 'SUBSTITUA_SEU_NUMERO', text: ($json.body && $json.body.texto) || $json.texto || 'Aviso SIGEF Bot (sem texto)' }) }}",
+        "options": { "timeout": 60000 }
+      },
+      "id": "evo-admin",
+      "name": "Avisar no WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-60, 0]
+    }
+  ],
+  "connections": {
+    "Webhook Admin": { "main": [[ { "node": "Avisar no WhatsApp", "type": "main", "index": 0 } ]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

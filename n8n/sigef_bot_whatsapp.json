@@ -1,0 +1,218 @@
+{
+  "name": "SIGEF Bot - WhatsApp",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "SUBSTITUA_PATH_BOT",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "wh-entrada",
+      "name": "Webhook Evolution",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-680, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extrai telefone, texto e localização do payload da Evolution API\nconst b = $json.body || $json;\nconst data = b.data || {};\nconst key = data.key || {};\nconst msg = data.message || {};\n\nconst jid = key.remoteJid || '';\nconst telefone = jid.split('@')[0];\nconst deGrupo = jid.endsWith('@g.us');\nconst deMim = key.fromMe === true;\n\nlet texto = msg.conversation\n  || (msg.extendedTextMessage && msg.extendedTextMessage.text)\n  || (msg.buttonsResponseMessage && msg.buttonsResponseMessage.selectedDisplayText)\n  || (msg.listResponseMessage && msg.listResponseMessage.title)\n  || null;\n\nlet lat = null, lon = null;\nif (msg.locationMessage) {\n  lat = msg.locationMessage.degreesLatitude;\n  lon = msg.locationMessage.degreesLongitude;\n}\n\nconst valido = !!telefone && !deGrupo && !deMim && (texto !== null || lat !== null);\n\nreturn [{ json: { telefone, texto, lat, lon, valido } }];"
+      },
+      "id": "code-extrair",
+      "name": "Extrair Mensagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-460, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.valido }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-valido",
+      "name": "Mensagem valida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-240, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://sigef_geoservice:8000/mensagem",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ telefone: $json.telefone, texto: $json.texto, lat: $json.lat, lon: $json.lon }) }}",
+        "options": { "timeout": 120000 }
+      },
+      "id": "http-geoservice",
+      "name": "Geoservice /mensagem",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-20, -100]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Transforma a lista de respostas em itens individuais, preservando o telefone\nconst telefone = $('Extrair Mensagem').first().json.telefone;\nconst respostas = $json.respostas || [];\nreturn respostas.map(r => ({ json: { ...r, telefone } }));"
+      },
+      "id": "code-explodir",
+      "name": "Explodir Respostas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [200, -100]
+    },
+    {
+      "parameters": { "batchSize": 1, "options": {} },
+      "id": "loop-itens",
+      "name": "Um por vez",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [420, -100]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "typeValidation": "loose" },
+                "conditions": [
+                  { "leftValue": "={{ $json.tipo }}", "rightValue": "texto", "operator": { "type": "string", "operation": "equals" } }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "texto"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "typeValidation": "loose" },
+                "conditions": [
+                  { "leftValue": "={{ $json.tipo }}", "rightValue": "imagem", "operator": { "type": "string", "operation": "equals" } }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "imagem"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "typeValidation": "loose" },
+                "conditions": [
+                  { "leftValue": "={{ $json.tipo }}", "rightValue": "documento", "operator": { "type": "string", "operation": "equals" } }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "documento"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "switch-tipo",
+      "name": "Tipo de resposta",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [660, -100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://SUBSTITUA_EVOLUTION:8080/message/sendText/SUBSTITUA_INSTANCIA",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [ { "name": "apikey", "value": "SUBSTITUA_APIKEY" } ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: $json.telefone, text: $json.texto }) }}",
+        "options": { "timeout": 60000 }
+      },
+      "id": "evo-texto",
+      "name": "Evolution sendText",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [920, -260]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://SUBSTITUA_EVOLUTION:8080/message/sendMedia/SUBSTITUA_INSTANCIA",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [ { "name": "apikey", "value": "SUBSTITUA_APIKEY" } ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: $json.telefone, mediatype: 'image', media: $json.url, caption: $json.legenda || '' }) }}",
+        "options": { "timeout": 120000 }
+      },
+      "id": "evo-imagem",
+      "name": "Evolution sendImage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [920, -100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://SUBSTITUA_EVOLUTION:8080/message/sendMedia/SUBSTITUA_INSTANCIA",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [ { "name": "apikey", "value": "SUBSTITUA_APIKEY" } ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: $json.telefone, mediatype: 'document', media: $json.url, fileName: $json.nome || 'arquivo', caption: $json.legenda || '' }) }}",
+        "options": { "timeout": 120000 }
+      },
+      "id": "evo-doc",
+      "name": "Evolution sendDocument",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [920, 60]
+    },
+    {
+      "parameters": { "amount": 1 },
+      "id": "wait-1s",
+      "name": "Pausa 1s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1160, -100]
+    }
+  ],
+  "connections": {
+    "Webhook Evolution": { "main": [[ { "node": "Extrair Mensagem", "type": "main", "index": 0 } ]] },
+    "Extrair Mensagem": { "main": [[ { "node": "Mensagem valida?", "type": "main", "index": 0 } ]] },
+    "Mensagem valida?": { "main": [
+      [ { "node": "Geoservice /mensagem", "type": "main", "index": 0 } ],
+      []
+    ] },
+    "Geoservice /mensagem": { "main": [[ { "node": "Explodir Respostas", "type": "main", "index": 0 } ]] },
+    "Explodir Respostas": { "main": [[ { "node": "Um por vez", "type": "main", "index": 0 } ]] },
+    "Um por vez": { "main": [
+      [],
+      [ { "node": "Tipo de resposta", "type": "main", "index": 0 } ]
+    ] },
+    "Tipo de resposta": { "main": [
+      [ { "node": "Evolution sendText", "type": "main", "index": 0 } ],
+      [ { "node": "Evolution sendImage", "type": "main", "index": 0 } ],
+      [ { "node": "Evolution sendDocument", "type": "main", "index": 0 } ]
+    ] },
+    "Evolution sendText": { "main": [[ { "node": "Pausa 1s", "type": "main", "index": 0 } ]] },
+    "Evolution sendImage": { "main": [[ { "node": "Pausa 1s", "type": "main", "index": 0 } ]] },
+    "Evolution sendDocument": { "main": [[ { "node": "Pausa 1s", "type": "main", "index": 0 } ]] },
+    "Pausa 1s": { "main": [[ { "node": "Um por vez", "type": "main", "index": 0 } ]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}
